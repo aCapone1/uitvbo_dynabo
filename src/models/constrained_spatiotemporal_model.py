@@ -12,6 +12,7 @@ from src.kernels.costum_kernels import WienerKernel, TemporalKernelB2P, Constant
 from src.samplers.minimax_tilting_sampler import TruncatedMVN
 from utils.torch_utils import _match_batch_dims, _match_dtype
 import torch
+from src.prior_mean_model import get_prior_mean
 
 from typing import Any, Union, List
 from torch import Tensor
@@ -40,7 +41,11 @@ class ConstrainedGPThroughTime(ExactGP, GPyTorchModel):
                  outputscale_hyperprior_temporal=None,
                  prev_trunc_samples=None,
                  prior_mean=0,
-                 forgetting_factor=0.2, ):
+                 forgetting_factor=0.2, 
+                 spatio_dimensions=2,
+                 scaling_factors=1,
+                 data_mean=0,
+                 data_stddev=1):
 
         # check dimensions
         if train_y is not None:
@@ -55,6 +60,7 @@ class ConstrainedGPThroughTime(ExactGP, GPyTorchModel):
             noise_constraint=noise_constraint)
 
         # initialize model
+        # super().__init__(train_inputs=train_x, train_targets=train_y, likelihood=likelihood)
         super(ConstrainedGPThroughTime, self).__init__(train_x, train_y, likelihood)
 
         # track constrained dimensions
@@ -117,8 +123,17 @@ class ConstrainedGPThroughTime(ExactGP, GPyTorchModel):
 
         self.mean_module = ConstantMean()
         if prior_mean != 0:
-            self.mean_module.initialize(constant=prior_mean)
-        self.mean_module.constant.requires_grad = False
+            if isinstance(prior_mean,float):
+                self.mean_module.initialize(constant=prior_mean)
+                self.mean_module.constant.requires_grad = False
+            elif prior_mean=='DynaBO':
+                self.mean_module = get_prior_mean(train_x, spatio_dimensions, scaling_factors, mean=data_mean, stddev=data_stddev)
+            else:
+                raise NotImplementedError
+                # self.mean_module = prior_mean
+        
+        if isinstance(self.mean_module, ConstantMean):
+            self.mean_module.constant.requires_grad = False
 
         # factors, that do not need to be recomputed
         self.C = None
@@ -156,7 +171,8 @@ class ConstrainedGPThroughTime(ExactGP, GPyTorchModel):
 
     def posterior(self, X: Tensor, observation_noise: Union[bool, Tensor] = False, **kwargs: Any
                   ) -> GPyTorchPosterior:
-
+        # if not isinstance(self.mean_module,ConstantMean):
+        X = X.squeeze(1)
         if 'evaluate_constrained' in kwargs:
             if kwargs['evaluate_constrained'] is True:
                 # get obseration points

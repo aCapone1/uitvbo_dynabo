@@ -94,6 +94,11 @@ class TVBO_Base:
         else:
             self.evaluate_likelihood = False
 
+        print('WARNING: Low number of BO restarts.')
+        # if model_options['prior_mean'] == 'DynaBO':
+        self.num_bo_restarts = 3
+        # else:
+        #     self.num_bo_restarts = 20
 
 class TimeVaryingBOModel(TVBO_Base):
 
@@ -270,6 +275,7 @@ class TimeVaryingBOModel(TVBO_Base):
         self.stable_list = [True for i in range(n_training_points)]  # initalized controllers are stable
 
         t_remain = torch.arange(self.time_horizon)[n_training_points:]
+        # train_x = train_x.unsqueeze(1)
         return train_x, scaled_train_y, t_remain
 
     def initialize_model(self, train_x, train_y, current_time=0, state_dict=None):
@@ -285,7 +291,11 @@ class TimeVaryingBOModel(TVBO_Base):
             outputscale_hyperprior_spatio=self.outputscale_hyperprior_spatio,
             outputscale_constraint_temporal=self.outputscale_constraint_spatio,
             prior_mean=self.prior_mean,
-            forgetting_factor=self.forgetting_factor, )
+            forgetting_factor=self.forgetting_factor, 
+            spatio_dimensions=self.objective_function_options['spatio_dimensions'],
+            scaling_factors=self.objective_function_options['scaling_factors'],
+            data_mean=self.data_mean,
+            data_stddev=self.data_stdv)
 
         # set options, freeze noise lvl
         model.likelihood.noise_covar.noise = (self.noise_lvl / self.data_stdv) ** 2
@@ -354,7 +364,7 @@ class TimeVaryingBOModel(TVBO_Base):
             acq_function=acqf,
             bounds=bounds,
             q=1,
-            num_restarts=20,
+            num_restarts=self.num_bo_restarts,
             raw_samples=100,  # used for intialization heuristic
             options={}, )
 
